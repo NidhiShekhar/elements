@@ -1,0 +1,547 @@
+/* =====================================================================
+   Architecture: three painted variants of the same room (dusk / day /
+   night — sky, sun/moon and interior lighting baked into each painting)
+   crossfading on top of each other, plus a handful of animated overlay
+   layers (beams, motes, lamp glow, fairy-light glow). The paintings
+   never move; only opacities animate.
+   ===================================================================== */
+@property --beams {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0.8;
+}
+@property --beam-color {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #f0a830;
+}
+@property --beam-mid {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(255, 162, 55, 0.36);
+}
+@property --glow-window-inner {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(255, 178, 65, 0.40);
+}
+@property --glow-window-outer {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(255, 145, 40, 0.15);
+}
+@property --glow-pool-inner {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(255, 170, 55, 0.26);
+}
+@property --glow-pool-outer {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(255, 140, 35, 0.07);
+}
+
+:root{
+  /* ---- lighting transition ---- */
+  --t:    1.5s;
+  --ease: cubic-bezier(0.4, 0.0, 0.2, 1);
+  --lamp-delay: 0.15s;   /* warm glows lag the room — "catching up" */
+  --beam-color-duration: 0.65s; /* day→dusk: yellow lands well before room finishes */
+  --beam-color-delay: 0s;
+  --beam-color-ease: cubic-bezier(0.25, 0, 0.15, 1);
+  --beam-fade-duration: 1.1s;
+  --beam-fade-delay: 0s;
+
+  /* dusk beams: deep golden-hour amber — not pale cream (screen on
+     dark fur reads ghostly if the light is too white) */
+  --beam-color: #f0a830;
+  --beam-mid:   rgba(255, 162, 55, 0.36);
+  --beam-mote-glow: rgba(255, 185, 80, 0.6);
+  --glow-window-inner: rgba(255, 178, 65, 0.40);
+  --glow-window-outer: rgba(255, 145, 40, 0.15);
+  --glow-pool-inner: rgba(255, 170, 55, 0.26);
+  --glow-pool-outer: rgba(255, 140, 35, 0.07);
+  --pool-left: 52%;
+  --pool-bottom: 6%;
+  --pool-width: 26%;
+  --pool-height: 15%;
+
+  /* ---- UI chrome, near-solid for WCAG AA independent of the scene ---- */
+  --card-bg:     rgba(38, 26, 18, 0.85);
+  --card-text:   #f4ead9;
+  --card-border: rgba(244, 234, 217, 0.14);
+  --page-bg:     #33241a;
+
+  /* ---- per-state layer opacities (dusk = the base painting) ---- */
+  --img-day: 0;   --img-night: 0;
+  --beams: 0.8;   /* dusk: golden-hour beams, slightly softer than day */
+  --vignette: 0.85;
+  --glow-night: 0;   /* lamp + fairy-light bloom overlays */
+}
+
+[data-theme="day"] {
+  --img-day: 1;   --img-night: 0;
+  --beams: 1;     /* day: full afternoon sun — brighter, whiter light */
+  --beam-color-duration: 1.5s;
+  --beam-color-delay: 0.1s;
+  --beam-color-ease: cubic-bezier(0.4, 0.0, 0.2, 1);
+  --beam-fade-duration: 1.5s;
+  --beam-fade-delay: 0.1s;
+  --beam-color: #fff3d6;
+  --beam-mid:   rgba(255, 243, 214, 0.5);
+  --beam-mote-glow: rgba(255, 243, 214, 0.7);
+  --glow-window-inner: rgba(255, 245, 220, 0.55);
+  --glow-window-outer: rgba(255, 235, 200, 0.22);
+  --glow-pool-inner: rgba(255, 233, 188, 0.5);
+  --glow-pool-outer: rgba(255, 233, 188, 0.16);
+  /* same footprint as dusk — avoids a position snap over the cat */
+  --pool-left: 52%;
+  --pool-bottom: 6%;
+  --pool-width: 26%;
+  --pool-height: 15%;
+  --vignette: 0.35;
+  --glow-night: 0;
+  --card-bg:     rgba(253, 249, 241, 0.92);
+  --card-text:   #43332a;
+  --card-border: rgba(74, 53, 39, 0.18);
+  --page-bg:     #8a7a67;
+}
+
+[data-theme="night"] {
+  --img-day: 0;   --img-night: 1;
+  --beams: 0;     /* the window contributes nothing at night */
+  --beam-color-duration: 1.25s;
+  --beam-color-delay: -0.06s;
+  --beam-color-ease: cubic-bezier(0.4, 0.0, 0.2, 1);
+  --beam-fade-duration: 1.25s;
+  --beam-fade-delay: -0.06s;
+  --vignette: 1;
+  --glow-night: 1;
+  --card-bg:     rgba(16, 18, 28, 0.9);
+  --card-text:   #e9e7f2;
+  --card-border: rgba(233, 231, 242, 0.12);
+  --page-bg:     #171b28;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--page-bg);
+  /* beam opacity and beam colour use separate clocks so day→dusk can
+     turn yellow fast while dusk→day still trails the painting gently */
+  transition:
+    background-color var(--t) var(--ease),
+    --beams var(--beam-fade-duration) var(--ease) var(--beam-fade-delay),
+    --beam-color var(--beam-color-duration) var(--beam-color-ease) var(--beam-color-delay),
+    --beam-mid var(--beam-color-duration) var(--beam-color-ease) var(--beam-color-delay),
+    --glow-window-inner var(--beam-color-duration) var(--beam-color-ease) var(--beam-color-delay),
+    --glow-window-outer var(--beam-color-duration) var(--beam-color-ease) var(--beam-color-delay),
+    --glow-pool-inner var(--beam-color-duration) var(--beam-color-ease) var(--beam-color-delay),
+    --glow-pool-outer var(--beam-color-duration) var(--beam-color-ease) var(--beam-color-delay);
+  font-family: var(--font-sans, -apple-system, "Segoe UI", sans-serif);
+  color: var(--card-text);
+  overflow: hidden;
+}
+
+.scene {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ---------- The stage: keeps the paintings' 3:2 aspect while covering
+   the viewport, so overlays positioned in % stay glued to the image
+   features (window, lamp, fairy lights) at any viewport size. -------- */
+.stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width:  max(100vw, 150vh);      /* 1536/1024 = 3:2 */
+  height: max(100vh, 66.667vw);
+  transform: translate(-50%, -50%);
+}
+
+/* ---------- Layer 0: the three paintings ----------
+   Dusk sits at the bottom, always opaque; day and night crossfade over
+   it. Only opacity animates — compositor-friendly, no re-mounting. */
+.room-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
+  transition: opacity var(--t) var(--ease);
+}
+.room-day   { opacity: var(--img-day); }
+.room-night { opacity: var(--img-night); }
+
+/* ---------- Layer 1: the beam field (Tyndall effect) ----------
+   Diagonal beams anchored at the window's top edge, sweeping down-left
+   at ~27-41° from vertical. Screen blend brightens the painting. ----- */
+.beam-field {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: var(--beams);
+}
+/* preserve the black cat on the rug in dusk + day — screen blend on
+   dark fur reads ghostly; not applied at night (beams off) */
+[data-theme="dusk"] .beam-field,
+[data-theme="day"] .beam-field {
+  -webkit-mask-image: radial-gradient(
+    ellipse 12% 9% at 47.5% 84.5%,
+    rgba(0, 0, 0, 0.2) 0%,
+    rgba(0, 0, 0, 0.5) 50%,
+    #000 78%
+  );
+  mask-image: radial-gradient(
+    ellipse 12% 9% at 47.5% 84.5%,
+    rgba(0, 0, 0, 0.2) 0%,
+    rgba(0, 0, 0, 0.5) 50%,
+    #000 78%
+  );
+}
+/* soft wash at the window glass — light enters here */
+.window-glow {
+  position: absolute;
+  left: 40%;
+  top: 10%;
+  width: 28%;
+  height: 24%;
+  background: radial-gradient(ellipse 90% 80% at 50% 85%,
+    var(--glow-window-inner) 0%,
+    var(--glow-window-outer) 45%,
+    transparent 72%);
+  filter: blur(10px);
+  pointer-events: none;
+}
+
+/* angled shafts of light pouring in from the window, sweeping down-left
+   onto the rug. transform-origin sits at the window sill so each beam
+   pivots from where the light actually enters. A soft top mask removes
+   the hard perpendicular cap of the rotated rectangle. */
+.beam {
+  position: absolute;
+  transform-origin: top center;
+  /* very soft gradient: no crisp core, fades away well before the floor */
+  background: linear-gradient(to bottom,
+    var(--beam-color) 0%,
+    var(--beam-mid) 40%,
+    transparent 88%);
+  animation: beam-breathe 13s ease-in-out infinite;
+  /* long, feathered top + tapered sides so the shaft has no hard edges */
+  -webkit-mask-image:
+    linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.25) 12%, #000 30%, #000 72%, transparent 100%),
+    linear-gradient(to right, transparent 0%, #000 28%, #000 72%, transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.25) 12%, #000 30%, #000 72%, transparent 100%),
+    linear-gradient(to right, transparent 0%, #000 28%, #000 72%, transparent 100%);
+  mask-composite: intersect;
+}
+/* main shaft — enters at the window, angles down-left into the room */
+.beam-a {
+  left: 57%;
+  top: 24%;
+  width: 16%;
+  height: 68%;
+  transform: rotate(25deg);
+  filter: blur(20px);
+  --beam-o: 0.5;  opacity: 0.5;
+}
+/* wide, diffuse wash */
+.beam-b {
+  left: 53%;
+  top: 23%;
+  width: 26%;
+  height: 72%;
+  transform: rotate(18deg);
+  filter: blur(34px);
+  animation-duration: 17s;
+  animation-delay: -4s;
+  --beam-o: 0.28;  opacity: 0.28;
+}
+/* faint slender ray nearest the glass */
+.beam-c {
+  left: 59%;
+  top: 25%;
+  width: 8%;
+  height: 60%;
+  transform: rotate(31deg);
+  filter: blur(12px);
+  animation-duration: 11s;
+  animation-delay: -2s;
+  --beam-o: 0.4;  opacity: 0.4;
+}
+
+@keyframes beam-breathe {
+  0%, 100% { opacity: var(--beam-o, 0.4); }
+  50%      { opacity: calc(var(--beam-o, 0.4) * 1.2); }
+}
+
+/* pool of light where the main beam lands on the floor */
+.light-pool {
+  position: absolute;
+  left: var(--pool-left);
+  bottom: var(--pool-bottom);
+  width: var(--pool-width);
+  height: var(--pool-height);
+  background: radial-gradient(ellipse at center,
+    var(--glow-pool-inner) 0%,
+    var(--glow-pool-outer) 45%,
+    transparent 70%);
+  filter: blur(16px);
+}
+/* widest diffuse shaft — ease back at dusk so it doesn't screen-wash
+   the black cat on the rug into a pale silhouette */
+[data-theme="dusk"] .beam-b {
+  --beam-o: 0.22;
+}
+
+/* mote zone shares the main beam's rotation, so dust only appears inside
+   the light (the actual Tyndall effect) and drifts along the beam axis */
+.mote-zone {
+  position: absolute;
+  left: 49%;
+  top: 25%;
+  width: 22%;
+  height: 68%;
+  transform: rotate(25deg);
+  transform-origin: top center;
+  overflow: hidden;
+}
+.mote {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--beam-color);
+  box-shadow: 0 0 4px 1px var(--beam-mote-glow);
+  opacity: 0;
+  animation: drift linear infinite;
+}
+@keyframes drift {
+  0%   { opacity: 0; transform: translate(0, 0); }
+  12%  { opacity: 0.65; }
+  88%  { opacity: 0.3; }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)); }
+}
+
+@keyframes drift-night {
+  0%   { opacity: 0; transform: translate(0, 0); }
+  12%  { opacity: 0.9; }
+  85%  { opacity: 0.5; }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)); }
+}
+
+/* night motes — warm dust near the lamp and fairy string; own layer so
+   screen-blended glow doesn't wash the specks out */
+.night-motes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: var(--glow-night);
+  transition: opacity var(--t) var(--ease) var(--lamp-delay);
+  z-index: 2;
+}
+.night-mote-zone {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.mote-night {
+  background: rgba(255, 228, 175, 0.98);
+  box-shadow:
+    0 0 4px 1px rgba(255, 210, 140, 0.9),
+    0 0 10px 3px rgba(255, 190, 110, 0.45);
+  animation-name: drift-night;
+  mix-blend-mode: screen;
+}
+
+/* ---------- Layer 2: night glow bloom ----------
+   The night painting already has the lamp and fairy lights lit; these
+   overlays add the soft animated bloom on top, lagging the crossfade so
+   the warm light "catches up" to the room. Two sources: the lamp on the
+   desk, and the fairy-light string along the top of the wall — together
+   they make the night lighting read omnidirectional. ---------- */
+.night-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: var(--glow-night);
+  transition: opacity var(--t) var(--ease) var(--lamp-delay);
+}
+.lamp-glow-core {
+  position: absolute;
+  left: 75.7%;
+  top: 36%;
+  width: 14%;
+  aspect-ratio: 1;
+  background: radial-gradient(circle, rgba(255, 210, 140, 0.7) 0%, rgba(255, 198, 128, 0.28) 45%, transparent 72%);
+  filter: blur(9px);
+}
+.lamp-glow-pool {
+  position: absolute;
+  left: 71%;
+  top: 53.5%;
+  width: 22%;
+  height: 7%;
+  background: radial-gradient(ellipse at center, rgba(255, 212, 146, 0.45) 0%, transparent 70%);
+  filter: blur(7px);
+}
+.lamp-bloom {
+  position: absolute;
+  left: 55%;
+  top: 22%;
+  width: 55%;
+  height: 78%;
+  background: radial-gradient(circle at 50% 42%, rgba(255, 196, 126, 0.22) 0%, transparent 60%);
+  filter: blur(16px);
+}
+/* fairy-light glow: a soft band hugging the string across the top-left,
+   plus individual bulb halos that twinkle very gently */
+/* soft band following the draped string (v3 paintings) */
+.fairy-band {
+  position: absolute;
+  left: 0%;
+  top: -1%;
+  width: 58%;
+  height: 15%;
+  background: radial-gradient(ellipse 90% 80% at 40% 55%, rgba(255, 208, 138, 0.28) 0%, rgba(255, 200, 128, 0.10) 55%, transparent 78%);
+  filter: blur(11px);
+}
+/* second warm pocket at the top-right corner where the string ends */
+.fairy-band-right {
+  left: auto;
+  right: -2%;
+  top: -3%;
+  width: 22%;
+  height: 12%;
+  background: radial-gradient(ellipse 85% 85% at 65% 45%, rgba(255, 208, 138, 0.26) 0%, rgba(255, 200, 128, 0.09) 55%, transparent 78%);
+}
+/* a broad, very faint wash so the upper bookshelf catches some warmth */
+.fairy-wash {
+  position: absolute;
+  left: -2%;
+  top: -3%;
+  width: 58%;
+  height: 48%;
+  background: radial-gradient(circle at 28% 12%, rgba(255, 196, 130, 0.14) 0%, transparent 65%);
+  filter: blur(16px);
+}
+.fairy-bulb {
+  position: absolute;
+  width: 2.4%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 224, 160, 0.9) 0%, rgba(255, 208, 138, 0.35) 42%, transparent 68%);
+  filter: blur(2.5px);
+  animation: bulb-twinkle 5s ease-in-out infinite;
+  /* centre the glow on the painted bulb, not the element's top-left */
+  transform: translate(-50%, -50%);
+}
+@keyframes bulb-twinkle {
+  0%, 100% { opacity: 0.75; }
+  50%      { opacity: 1; }
+}
+/* ---------- Layer 3: the lamp control (invisible, sits on the painted
+   lamp). Cycles day → dusk → night → dusk. Real <button>: Enter/Space and
+   focus come free. ---------- */
+.lamp-button {
+  position: absolute;
+  left: 77.5%;
+  top: 36%;
+  width: 10%;
+  height: 26%;
+  min-width: 44px;
+  min-height: 44px;
+  background: none;
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+  z-index: 3;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.lamp-button:focus-visible {
+  outline: 2px solid rgba(255, 226, 174, 0.9);
+  outline-offset: 3px;
+}
+/* hover affordance: a faint halo on the painted lamp, whisper-quiet */
+.lamp-hint {
+  position: absolute;
+  inset: -12%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 226, 174, 0.28) 0%, transparent 65%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+.lamp-button:hover .lamp-hint,
+.lamp-button:focus-visible .lamp-hint {
+  opacity: 1;
+}
+
+/* ---------- Layer 4: vignette seats the UI ---------- */
+.vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 100% at 50% 100%, transparent 42%, rgba(20, 14, 10, 0.5) 100%);
+  opacity: var(--vignette);
+  transition: opacity var(--t) var(--ease);
+  pointer-events: none;
+}
+
+.toggle {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  z-index: 5;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #f4ead9;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+/* ---------- Reduced motion: loops stop, lighting change becomes a
+   plain ~200ms crossfade. ---------- */
+.no-motion .beam,
+.no-motion .mote,
+.no-motion .mote-night,
+.no-motion .fairy-bulb {
+  animation: none !important;
+}
+.no-motion .mote-night {
+  opacity: 0.65;
+}
+.no-motion {
+  --t: 0.2s;
+  --lamp-delay: 0s;
+  --beam-color-duration: 0.2s;
+  --beam-color-delay: 0s;
+  --beam-fade-duration: 0.2s;
+  --beam-fade-delay: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .beam, .mote, .mote-night, .fairy-bulb { animation: none !important; }
+  .mote-night { opacity: 0.65; }
+  :root {
+    --t: 0.2s;
+    --lamp-delay: 0s;
+    --beam-color-duration: 0.2s;
+    --beam-color-delay: 0s;
+    --beam-fade-duration: 0.2s;
+    --beam-fade-delay: 0s;
+  }
+}

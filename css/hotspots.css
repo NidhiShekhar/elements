@@ -1,0 +1,157 @@
+/* =====================================================================
+   Feature hotspots — invisible buttons glued to painted objects in the
+   v3 room paintings (props are baked into the art). Same %-based
+   positioning as the lamp button, so everything stays aligned at any
+   viewport size.
+
+   Object map:
+     lamp            → theme cycle (room.css .lamp-button)
+     stack of books  → dashboard
+     telephone       → check-in
+     notebook + pen  → journal
+     pink flower pot → cycle
+     armchair        → insights
+     sleeping cat    → companion
+     record player   → music
+     wall botanicals → about Bloom (flower frame) (flower frame)
+   ===================================================================== */
+
+.hotspot {
+  position: absolute;
+  min-width: 44px;
+  min-height: 44px;
+  background: none;
+  border: none;
+  border-radius: 16px;
+  cursor: pointer;
+  z-index: 3;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.hotspot:focus-visible {
+  outline: 2px solid rgba(255, 226, 174, 0.9);
+  outline-offset: 3px;
+}
+
+/* hover halo — same whisper-quiet language as the lamp hint */
+.hotspot-hint {
+  position: absolute;
+  top: calc(-14% + var(--hint-shift-y, 0));
+  right: -14%;
+  bottom: calc(-14% - var(--hint-shift-y, 0));
+  left: -14%;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--hint-color, rgba(255, 226, 174, 0.30)) 0%, transparent 65%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+.hotspot:hover .hotspot-hint,
+.hotspot:focus-visible .hotspot-hint {
+  opacity: 1;
+}
+
+/* per-object placement + halo tint (percent of the 3:2 stage) */
+.hotspot-books    { left: 55%;   top: 61.5%; width: 9%;    height: 10.5%;
+                    --hint-shift-y: 10%; }
+.hotspot-phone    { left: 53.5%; top: 48.5%; width: 8.5%;  height: 10.5%;
+                    --hint-color: rgba(180, 220, 190, 0.35);
+                    --hint-shift-y: 12%; }
+.hotspot-notebook { left: 61.5%; top: 53%;   width: 9.5%;  height: 7.5%;
+                    --hint-shift-y: 10%; }
+.hotspot-pot      { left: 45.5%; top: 62.5%; width: 7.5%;  height: 15%;
+                    --hint-color: rgba(255, 210, 225, 0.48); }
+/* tall plant — circular glow so it reads on the pink flowers */
+.hotspot-pot .hotspot-hint {
+  top: 58%;
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  width: 175%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+}
+.hotspot-armchair { left: 9%;    top: 50%;   width: 30%;   height: 36%;
+                    --hint-color: rgba(233, 200, 130, 0.26); }
+.hotspot-cat      { left: 41%;   top: 78.5%; width: 13.5%; height: 12%;
+                    --hint-color: rgba(255, 214, 150, 0.38);
+                    --hint-shift-y: 8%; }
+.hotspot-vinyl    { left: 75.5%; top: 69.5%; width: 16%;   height: 22%;
+                    --hint-shift-y: 10%; }
+/* bottom botanical frame only (pink flower) — About Bloom */
+.hotspot-wallart  { left: 89%;   top: 27.5%; width: 7%;    height: 13.5%;
+                    --hint-color: rgba(190, 215, 170, 0.40); }
+/* tall hit box — keep the glow circular, not stretched oval */
+.hotspot-wallart .hotspot-hint {
+  top: 50%;
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  width: 160%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+}
+
+/* the armchair is a large soft target — keep its halo subtle and wide */
+.hotspot-armchair .hotspot-hint { inset: -4%; }
+
+/* first-visit tooltip (tiny label on hover/focus) */
+.hotspot::after {
+  content: attr(data-hint);
+  position: absolute;
+  left: 50%;
+  bottom: 104%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  font-family: var(--font-sans, sans-serif);
+  color: var(--card-text);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+.hotspot:hover::after,
+.hotspot:focus-visible::after {
+  opacity: 1;
+}
+.hotspot:not([data-hint])::after { content: none; }
+
+/* the armchair tooltip should hover over the seat, not off-screen */
+.hotspot-armchair::after { bottom: auto; top: 20%; }
+
+/* first-visit welcome hint, floating gently near the bottom center */
+.welcome-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 7%;
+  transform: translateX(-50%);
+  z-index: 6;
+  max-width: min(80vw, 420px);
+  text-align: center;
+  font-family: var(--font-serif, Georgia, serif);
+  font-size: 0.95rem;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--card-text);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 18px;
+  padding: 12px 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  animation: hint-in 1.2s ease 0.8s both;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+.welcome-hint.gone { opacity: 0; }
+@keyframes hint-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to   { opacity: 1; transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .welcome-hint { animation: none; }
+}
