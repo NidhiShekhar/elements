@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dusk">
+<head>
+<meta charset="UTF-8">
+<title>Cozy Room — Painted Scene + Lamp-Cycled Lighting</title>
+<style>
+  /* =====================================================================
+     Architecture: three painted variants of the same room (dusk / day /
+     night — sky, sun/moon and interior lighting baked into each painting)
+     crossfading on top of each other, plus a handful of animated overlay
+     layers (beams, motes, lamp glow, fairy-light glow). The paintings
+     never move; only opacities animate.
+     ===================================================================== */
+  :root{
+    /* ---- lighting transition ---- */
+    --t:    1.5s;
+    --ease: cubic-bezier(0.4, 0.0, 0.2, 1);
+    --lamp-delay: 0.15s;   /* warm glows lag the room — "catching up" */
+
+    --beam-color: #fff3d6;
+
+    /* ---- UI chrome, near-solid for WCAG AA independent of the scene ---- */
+    --card-bg:     rgba(38, 26, 18, 0.85);
+    --card-text:   #f4ead9;
+    --card-border: rgba(244, 234, 217, 0.14);
+    --page-bg:     #33241a;
+
+    /* ---- per-state layer opacities (dusk = the base painting) ---- */
+    --img-day: 0;   --img-night: 0;
+    --beams: 0.8;   /* dusk: golden-hour beams, slightly softer than day */
+    --vignette: 0.85;
+    --glow-night: 0;   /* lamp + fairy-light bloom overlays */
+  }
+
+  [data-theme="day"] {
+    --img-day: 1;   --img-night: 0;
+    --beams: 1;     /* day: full afternoon sun */
+    --vignette: 0.35;
+    --glow-night: 0;
+    --card-bg:     rgba(253, 249, 241, 0.92);
+    --card-text:   #43332a;
+    --card-border: rgba(74, 53, 39, 0.18);
+    --page-bg:     #8a7a67;
+  }
+
+  [data-theme="night"] {
+    --img-day: 0;   --img-night: 1;
+    --beams: 0;     /* the window contributes nothing at night */
+    --vignette: 1;
+    --glow-night: 1;
+    --card-bg:     rgba(16, 18, 28, 0.9);
+    --card-text:   #e9e7f2;
+    --card-border: rgba(233, 231, 242, 0.12);
+    --page-bg:     #171b28;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--page-bg);
+    transition: background-color var(--t) var(--ease);
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    color: var(--card-text);
+    overflow: hidden;
+  }
+
+  .scene {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ---------- The stage: keeps the paintings' 3:2 aspect while covering
+     the viewport, so overlays positioned in % stay glued to the image
+     features (window, lamp, fairy lights) at any viewport size. -------- */
+  .stage {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width:  max(100vw, 150vh);      /* 1536/1024 = 3:2 */
+    height: max(100vh, 66.667vw);
+    transform: translate(-50%, -50%);
+  }
+
+  /* ---------- Layer 0: the three paintings ----------
+     Dusk sits at the bottom, always opaque; day and night crossfade over
+     it. Only opacity animates — compositor-friendly, no re-mounting. */
+  .room-art {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    user-select: none;
+    -webkit-user-drag: none;
+    pointer-events: none;
+    transition: opacity var(--t) var(--ease);
+  }
+  .room-day   { opacity: var(--img-day); }
+  .room-night { opacity: var(--img-night); }
+
+  /* ---------- Layer 1: the beam field (Tyndall effect) ----------
+     Diagonal beams anchored at the window's top edge, sweeping down-left
+     at ~27-41° from vertical. Screen blend brightens the painting. ----- */
+  .beam-field {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    mix-blend-mode: screen;
+    opacity: var(--beams);
+    transition: opacity var(--t) var(--ease);
+  }
+  .beam {
+    position: absolute;
+    transform-origin: top center;
+    background: linear-gradient(to bottom, var(--beam-color) 0%, rgba(255, 243, 214, 0.5) 50%, transparent 92%);
+    animation: beam-breathe 11s ease-in-out infinite;
+  }
+  /* main beam */
+  .beam-a {
+    left: 64%;
+    top: 10%;
+    width: 15%;
+    height: 96%;
+    transform: rotate(33deg);
+    filter: blur(12px);
+  }
+  /* wide diffuse wash, deeper into the room */
+  .beam-b {
+    left: 72%;
+    top: 9%;
+    width: 22%;
+    height: 100%;
+    transform: rotate(41deg);
+    filter: blur(22px);
+    animation-duration: 14s;
+    animation-delay: -4s;
+  }
+  /* crisp narrow blade close to the window */
+  .beam-c {
+    left: 60%;
+    top: 12%;
+    width: 6%;
+    height: 82%;
+    transform: rotate(27deg);
+    filter: blur(5px);
+    animation-duration: 9s;
+    animation-delay: -2s;
+  }
+  /* slat banding from the blinds, fading out down the beam; beams are
+     rotated, so the stripes are counter-rotated to stay level in-world */
+  .beam-a::after, .beam-c::after {
+    content: "";
+    position: absolute;
+    inset: -12% 0;
+    background: repeating-linear-gradient(
+      -33deg,
+      rgba(122, 88, 48, 0.16) 0px,
+      rgba(122, 88, 48, 0.16) 5px,
+      transparent 5px,
+      transparent 26px
+    );
+    -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, transparent 45%);
+    mask-image: linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, transparent 45%);
+  }
+  @keyframes beam-breathe {
+    0%, 100% { opacity: var(--beam-o, 0.4); }
+    50%      { opacity: calc(var(--beam-o, 0.4) * 1.35); }
+  }
+  .beam-a { --beam-o: 0.7;  opacity: 0.7; }
+  .beam-b { --beam-o: 0.38; opacity: 0.38; }
+  .beam-c { --beam-o: 0.6;  opacity: 0.6; }
+
+  /* pool of light where the main beam lands on the rug */
+  .light-pool {
+    position: absolute;
+    left: 22%;
+    bottom: -4%;
+    width: 42%;
+    height: 22%;
+    background: radial-gradient(ellipse at center, rgba(255, 233, 188, 0.55) 0%, rgba(255, 233, 188, 0.18) 45%, transparent 70%);
+    filter: blur(14px);
+  }
+
+  /* mote zone shares the main beam's rotation, so dust only appears inside
+     the light (the actual Tyndall effect) and drifts along the beam axis */
+  .mote-zone {
+    position: absolute;
+    left: 65%;
+    top: 13%;
+    width: 14%;
+    height: 92%;
+    transform: rotate(33deg);
+    transform-origin: top center;
+    overflow: hidden;
+  }
+  .mote {
+    position: absolute;
+    border-radius: 50%;
+    background: var(--beam-color);
+    box-shadow: 0 0 4px 1px rgba(255, 243, 214, 0.7);
+    opacity: 0;
+    animation: drift linear infinite;
+  }
+  @keyframes drift {
+    0%   { opacity: 0; transform: translate(0, 0); }
+    12%  { opacity: 0.65; }
+    88%  { opacity: 0.3; }
+    100% { opacity: 0; transform: translate(var(--dx), var(--dy)); }
+  }
+
+  /* ---------- Layer 2: night glow bloom ----------
+     The night painting already has the lamp and fairy lights lit; these
+     overlays add the soft animated bloom on top, lagging the crossfade so
+     the warm light "catches up" to the room. Two sources: the lamp on the
+     desk, and the fairy-light string along the top of the wall — together
+     they make the night lighting read omnidirectional. ---------- */
+  .night-glow {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    mix-blend-mode: screen;
+    opacity: var(--glow-night);
+    transition: opacity var(--t) var(--ease) var(--lamp-delay);
+  }
+  .lamp-glow-core {
+    position: absolute;
+    left: 75.7%;
+    top: 36%;
+    width: 14%;
+    aspect-ratio: 1;
+    background: radial-gradient(circle, rgba(255, 210, 140, 0.7) 0%, rgba(255, 198, 128, 0.28) 45%, transparent 72%);
+    filter: blur(9px);
+  }
+  .lamp-glow-pool {
+    position: absolute;
+    left: 71%;
+    top: 53.5%;
+    width: 22%;
+    height: 7%;
+    background: radial-gradient(ellipse at center, rgba(255, 212, 146, 0.45) 0%, transparent 70%);
+    filter: blur(7px);
+  }
+  .lamp-bloom {
+    position: absolute;
+    left: 55%;
+    top: 22%;
+    width: 55%;
+    height: 78%;
+    background: radial-gradient(circle at 50% 42%, rgba(255, 196, 126, 0.22) 0%, transparent 60%);
+    filter: blur(16px);
+  }
+  /* fairy-light glow: a soft band hugging the string across the top-left,
+     plus individual bulb halos that twinkle very gently */
+  .fairy-band {
+    position: absolute;
+    left: -2%;
+    top: -4%;
+    width: 62%;
+    height: 18%;
+    background: radial-gradient(ellipse at 45% 30%, rgba(255, 208, 138, 0.30) 0%, rgba(255, 200, 128, 0.12) 55%, transparent 78%);
+    filter: blur(12px);
+  }
+  /* a broad, very faint wash so the upper bookshelf catches some warmth */
+  .fairy-wash {
+    position: absolute;
+    left: -4%;
+    top: -6%;
+    width: 55%;
+    height: 55%;
+    background: radial-gradient(circle at 30% 8%, rgba(255, 196, 130, 0.16) 0%, transparent 65%);
+    filter: blur(18px);
+  }
+  .fairy-bulb {
+    position: absolute;
+    width: 3.2%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 224, 160, 0.85) 0%, rgba(255, 208, 138, 0.3) 45%, transparent 70%);
+    filter: blur(3px);
+    animation: bulb-twinkle 5s ease-in-out infinite;
+  }
+  @keyframes bulb-twinkle {
+    0%, 100% { opacity: 0.75; }
+    50%      { opacity: 1; }
+  }
+
+  /* ---------- Layer 3: the lamp control (invisible, sits on the painted
+     lamp). Cycles dusk → day → night. Real <button>: Enter/Space and
+     focus come free. ---------- */
+  .lamp-button {
+    position: absolute;
+    left: 77.5%;
+    top: 36%;
+    width: 10%;
+    height: 26%;
+    min-width: 44px;
+    min-height: 44px;
+    background: none;
+    border: none;
+    border-radius: 14px;
+    cursor: pointer;
+    z-index: 3;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .lamp-button:focus-visible {
+    outline: 2px solid rgba(255, 226, 174, 0.9);
+    outline-offset: 3px;
+  }
+  /* hover affordance: a faint halo on the painted lamp, whisper-quiet */
+  .lamp-hint {
+    position: absolute;
+    inset: -12%;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 226, 174, 0.28) 0%, transparent 65%);
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+  }
+  .lamp-button:hover .lamp-hint,
+  .lamp-button:focus-visible .lamp-hint {
+    opacity: 1;
+  }
+
+  /* ---------- Layer 4: vignette seats the UI ---------- */
+  .vignette {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(120% 100% at 50% 100%, transparent 42%, rgba(20, 14, 10, 0.5) 100%);
+    opacity: var(--vignette);
+    transition: opacity var(--t) var(--ease);
+    pointer-events: none;
+  }
+
+  /* ---------- Foreground UI card (stand-in for the dashboard) ---------- */
+  .card {
+    position: absolute;
+    left: 50%;
+    top: 58%;
+    transform: translate(-50%, -50%);
+    background: var(--card-bg);
+    color: var(--card-text);
+    backdrop-filter: blur(14px);
+    border: 1px solid var(--card-border);
+    border-radius: 18px;
+    padding: 28px 34px;
+    max-width: 380px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    transition:
+      background-color var(--t) var(--ease),
+      color var(--t) var(--ease),
+      border-color var(--t) var(--ease);
+    z-index: 4;
+  }
+  .card h1 { margin: 0 0 6px; font-size: 1.4rem; font-weight: 600; }
+  .card p  { margin: 0; opacity: 0.8; font-size: 0.92rem; line-height: 1.5; }
+
+  .toggle {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    z-index: 5;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #f4ead9;
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+
+  /* ---------- Reduced motion: loops stop, lighting change becomes a
+     plain ~200ms crossfade. ---------- */
+  .no-motion .beam,
+  .no-motion .mote,
+  .no-motion .fairy-bulb {
+    animation: none !important;
+  }
+  .no-motion { --t: 0.2s; --lamp-delay: 0s; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .beam, .mote, .fairy-bulb { animation: none !important; }
+    :root { --t: 0.2s; --lamp-delay: 0s; }
+  }
+</style>
+<script>
+  // Apply persisted theme before first paint (no flash of the wrong state).
+  // ?theme=dusk|day|night previews a state without persisting it.
+  (function () {
+    var VALID = ["dusk", "day", "night"];
+    var urlTheme = new URLSearchParams(location.search).get("theme");
+    var stored = null;
+    try { stored = localStorage.getItem("bloomroom-lighting"); } catch (e) {}
+    var theme = VALID.indexOf(urlTheme) !== -1 ? urlTheme
+              : VALID.indexOf(stored)   !== -1 ? stored
+              : "dusk";
+    document.documentElement.dataset.theme = theme;
+  })();
+</script>
+</head>
+<body>
+
+<div class="scene" id="scene">
+  <div class="stage">
+    <!-- the three paintings; dusk is the always-present base -->
+    <img class="room-art room-dusk"  src="bloomroom-base.png"  alt="" draggable="false">
+    <img class="room-art room-day"   src="bloomroom-day.png"   alt="" draggable="false">
+    <img class="room-art room-night" src="bloomroom-night.png" alt="" draggable="false">
+
+    <!-- diagonal light beams + contained dust + floor pool -->
+    <div class="beam-field">
+      <div class="beam beam-a"></div>
+      <div class="beam beam-b"></div>
+      <div class="beam beam-c"></div>
+      <div class="light-pool"></div>
+      <div class="mote-zone" id="moteZone"></div>
+    </div>
+
+    <!-- night bloom: lamp + fairy lights (omnidirectional warmth) -->
+    <div class="night-glow" aria-hidden="true">
+      <div class="lamp-bloom"></div>
+      <div class="lamp-glow-core"></div>
+      <div class="lamp-glow-pool"></div>
+      <div class="fairy-wash"></div>
+      <div class="fairy-band"></div>
+      <div class="fairy-bulb" style="left:2%;  top:1.5%;"></div>
+      <div class="fairy-bulb" style="left:8%;  top:0.5%; animation-delay:-1.2s;"></div>
+      <div class="fairy-bulb" style="left:14%; top:2.5%; animation-delay:-2.4s;"></div>
+      <div class="fairy-bulb" style="left:20%; top:4%;   animation-delay:-0.6s;"></div>
+      <div class="fairy-bulb" style="left:26%; top:2%;   animation-delay:-3.4s;"></div>
+      <div class="fairy-bulb" style="left:32%; top:0.5%; animation-delay:-1.8s;"></div>
+      <div class="fairy-bulb" style="left:38%; top:2.5%; animation-delay:-4.2s;"></div>
+      <div class="fairy-bulb" style="left:44%; top:4.5%; animation-delay:-2.9s;"></div>
+      <div class="fairy-bulb" style="left:50%; top:3%;   animation-delay:-0.9s;"></div>
+    </div>
+
+    <!-- lamp control -->
+    <button class="lamp-button" id="lampBtn" type="button"
+            aria-label="Brighten the room to daytime">
+      <span class="lamp-hint" aria-hidden="true"></span>
+    </button>
+  </div>
+
+  <div class="vignette"></div>
+
+  <div class="card">
+    <h1>Good morning, there</h1>
+    <p>This card sits in the foreground. The room behind it moves so slowly you feel it more than see it.</p>
+  </div>
+
+  <button class="toggle" id="toggleBtn">Pause ambient motion</button>
+</div>
+
+<script>
+  /* =====================================================================
+     Lighting-state system — a three-way cycle on the lamp:
+     dusk → day → night → dusk. Dusk is the first-visit default.
+     ===================================================================== */
+  const LIGHTING_KEY = 'bloomroom-lighting';
+  const ORDER = ['dusk', 'day', 'night'];
+  const NEXT_LABEL = {
+    dusk:  'Brighten the room to daytime',
+    day:   'Turn on the lamp for night mode',
+    night: 'Dim the lights back to a calm dusk'
+  };
+
+  const lampBtn = document.getElementById('lampBtn');
+
+  function currentLighting() {
+    const t = document.documentElement.dataset.theme;
+    return ORDER.includes(t) ? t : 'dusk';
+  }
+
+  function setLighting(state) {
+    document.documentElement.dataset.theme = state;
+    try { localStorage.setItem(LIGHTING_KEY, state); } catch (e) {}
+    syncLampA11y(state);
+  }
+
+  function syncLampA11y(state) {
+    // Label describes what the *next* press does — the effect, not
+    // "toggle theme".
+    lampBtn.setAttribute('aria-label', NEXT_LABEL[state]);
+  }
+
+  lampBtn.addEventListener('click', () => {
+    const next = ORDER[(ORDER.indexOf(currentLighting()) + 1) % ORDER.length];
+    setLighting(next);
+  });
+
+  syncLampA11y(currentLighting());
+
+  /* =====================================================================
+     Dust motes — spawned only inside the mote zone (the main beam's
+     footprint), so every mote lives inside the light.
+     ===================================================================== */
+  const moteZone = document.getElementById('moteZone');
+
+  function spawnMotes(count) {
+    for (let i = 0; i < count; i++) {
+      const mote = document.createElement('div');
+      mote.className = 'mote';
+      const size = 2 + Math.random() * 2.5;
+      const x = 4 + Math.random() * 92;             // % across the beam
+      const y = Math.random() * 80;                 // % along the beam
+      const dx = (Math.random() - 0.5) * 30;        // gentle sideways waft
+      const dy = 60 + Math.random() * 120;          // drift along the beam
+      const duration = 10 + Math.random() * 14;
+      mote.style.width = size + 'px';
+      mote.style.height = size + 'px';
+      mote.style.left = x + '%';
+      mote.style.top = y + '%';
+      mote.style.setProperty('--dx', dx + 'px');
+      mote.style.setProperty('--dy', dy + 'px');
+      mote.style.animationDuration = duration + 's';
+      mote.style.animationDelay = (Math.random() * -duration) + 's';
+      moteZone.appendChild(mote);
+    }
+  }
+  spawnMotes(32);
+
+  /* Pause/resume, doubling as a reduced-motion stand-in. */
+  const scene = document.getElementById('scene');
+  const btn = document.getElementById('toggleBtn');
+  let paused = false;
+  btn.addEventListener('click', () => {
+    paused = !paused;
+    scene.classList.toggle('no-motion', paused);
+    btn.textContent = paused ? 'Resume ambient motion' : 'Pause ambient motion';
+  });
+
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    scene.classList.add('no-motion');
+    btn.textContent = 'Resume ambient motion';
+    paused = true;
+  }
+</script>
+
+</body>
+</html>
